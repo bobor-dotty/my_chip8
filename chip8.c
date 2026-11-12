@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 // CHIP-8 标准内置字体集 (80 字节)
 static const uint8_t fontset[80] = {
@@ -97,7 +98,7 @@ void chip8_cycle(Chip8 *chip)
     chip->opcode = (chip->memory[chip->pc] << 8) | chip->memory[chip->pc + 1];
 
     // 打印看看取到了什么指令（十六进制）
-    printf("Fetched opcode: 0x%X at PC: 0x%X\n", chip->opcode, chip->pc);
+    // printf("Fetched opcode: 0x%X at PC: 0x%X\n", chip->opcode, chip->pc);
 
     // PC 自增 2（因为执行完这条指令，PC 要指向下一条指令）
     chip->pc += 2;
@@ -111,16 +112,85 @@ void chip8_cycle(Chip8 *chip)
         if (chip->opcode == 0x00E0)
         {
             memset(chip->video, 0, sizeof(chip->video));
-            printf("  -> Executed 00E0: Screen cleared!\n");
+            // printf("  -> Executed 00E0: Screen cleared!\n");
         }
         break;
 
+    case 0x1000:
+    { // 1NNN: 无条件跳转 (Jump)
+        // 提取 NNN (低 12 位地址)
+        uint16_t NNN = chip->opcode & 0x0FFF;
+        // 架构师心法：直接覆盖 PC 的值，硬件里的 MUX 会立刻改变取指地址
+        chip->pc = NNN;
+        // printf("  -> Executed 1NNN: Jumped to 0x%X\n", NNN);
+        break;
+    }
+
+    case 0x2000:
+    { // 2NNN: 调用子程序 (Call)
+        uint16_t NNN = chip->opcode & 0x0FFF;
+        // 1. 将当前的 PC (即下一条指令的地址) 压入栈中
+        // 架构师防坑：必须检查栈是否溢出 (CHIP-8 栈只能存 16 层)
+        if (chip->sp < 16)
+        {
+            chip->stack[chip->sp] = chip->pc;
+            chip->sp++;
+        }
+        else
+        {
+            // printf("  -> Error: Stack Overflow!\n");
+        }
+        // 2. 跳转到目标地址
+        chip->pc = NNN;
+        // printf("  -> Executed 2NNN: Called subroutine at 0x%X, SP: %d\n", NNN, chip->sp);
+        break;
+    }
+
+    case 0x3000:
+    { // 3XNN: 条件跳转 (如果 VX == NN，则跳过下一条指令)
+        uint8_t X = (chip->opcode & 0x0F00) >> 8;
+        uint8_t NN = (chip->opcode & 0x00FF);
+
+        if (chip->V[X] == NN)
+        {
+            // 架构师心法：因为取指阶段 PC 已经 +2 了，这里再 +2 就能实现“跳过”
+            chip->pc += 2;
+            // printf("  -> Executed 3XNN: V[%X] == %d, Skipped next instruction\n", X, NN);
+        }
+        else
+        {
+            // printf("  -> Executed 3XNN: V[%X] != %d, No skip\n", X, NN);
+        }
+        break;
+    }
+
+    case 0x4000:
+    { // 4XNN: 如果 VX != NN，则跳过下一条指令
+        uint8_t X = (chip->opcode & 0x0F00) >> 8;
+        uint8_t NN = (chip->opcode & 0x00FF);
+        if (chip->V[X] != NN)
+        {
+            chip->pc += 2;
+        }
+        break;
+    }
+
+    case 0x5000:
+    { // 5XY0: 如果 VX == VY，则跳过下一条指令
+        uint8_t X = (chip->opcode & 0x0F00) >> 8;
+        uint8_t Y = (chip->opcode & 0x00F0) >> 4;
+        if (chip->V[X] == chip->V[Y])
+        {
+            chip->pc += 2;
+        }
+        break;
+    }
     case 0x6000:
     { // 6XNN: 将 NN 赋值给寄存器 VX
         uint8_t X = (chip->opcode & 0x0F00) >> 8;
         uint8_t NN = (chip->opcode & 0x00FF);
         chip->V[X] = NN;
-        printf("  -> Executed 6XNN: V[%X] = %d\n", X, NN);
+        // printf("  -> Executed 6XNN: V[%X] = %d\n", X, NN);
         break;
     }
 
@@ -129,7 +199,7 @@ void chip8_cycle(Chip8 *chip)
         uint8_t X = (chip->opcode & 0x0F00) >> 8;
         uint8_t NN = (chip->opcode & 0x00FF);
         chip->V[X] += NN;
-        printf("  -> Executed 7XNN: V[%X] += %d\n", X, NN);
+        // printf("  -> Executed 7XNN: V[%X] += %d\n", X, NN);
         break;
     }
     case 0x8000:
@@ -158,7 +228,7 @@ void chip8_cycle(Chip8 *chip)
 
             // 只保留低 8 位存回 VX
             chip->V[X] = sum & 0xFF;
-            printf("  -> Executed 8XY4: V[%X] = V[%X] + V[%X] (Carry: %d)\n", X, X, Y, chip->V[0xF]);
+            // printf("  -> Executed 8XY4: V[%X] = V[%X] + V[%X] (Carry: %d)\n", X, X, Y, chip->V[0xF]);
             break;
         }
         case 0x5:
@@ -174,34 +244,34 @@ void chip8_cycle(Chip8 *chip)
             }
 
             chip->V[X] = chip->V[X] - chip->V[Y];
-            printf("  -> Executed 8XY5: V[%X] = V[%X] - V[%X] (No Borrow: %d)\n", X, X, Y, chip->V[0xF]);
+            // printf("  -> Executed 8XY5: V[%X] = V[%X] - V[%X] (No Borrow: %d)\n", X, X, Y, chip->V[0xF]);
             break;
         }
         case 0x0:
         { // 8XY0: VX = VY
             chip->V[X] = chip->V[Y];
-            printf("  -> Executed 8XY0: V[%X] = V[%X]\n", X, Y);
+            // printf("  -> Executed 8XY0: V[%X] = V[%X]\n", X, Y);
             break;
         }
         case 0x1:
         { // 8XY1: VX = VX | VY
             chip->V[X] |= chip->V[Y];
             chip->V[0xF] = 0;
-            printf("  -> Executed 8XY1: V[%X] |= V[%X]\n", X, Y);
+            // printf("  -> Executed 8XY1: V[%X] |= V[%X]\n", X, Y);
             break;
         }
         case 0x2:
         { // 8XY2: VX = VX & VY (按位与)
             chip->V[X] &= chip->V[Y];
             chip->V[0xF] = 0; // 逻辑运算后 VF 必须清零
-            printf("  -> Executed 8XY2: V[%X] &= V[%X]\n", X, Y);
+            // printf("  -> Executed 8XY2: V[%X] &= V[%X]\n", X, Y);
             break;
         }
         case 0x3:
         { // 8XY3: VX = VX ^ VY (按位异或)
             chip->V[X] ^= chip->V[Y];
             chip->V[0xF] = 0; // 逻辑运算后 VF 必须清零
-            printf("  -> Executed 8XY3: V[%X] ^= V[%X]\n", X, Y);
+            // printf("  -> Executed 8XY3: V[%X] ^= V[%X]\n", X, Y);
             break;
         }
         case 0x6:
@@ -209,7 +279,7 @@ void chip8_cycle(Chip8 *chip)
             // 提取 VY 的最低位 (LSB) 存入 VF
             chip->V[0xF] = chip->V[Y] & 0x1;
             chip->V[X] = chip->V[Y] >> 1;
-            printf("  -> Executed 8XY6: V[%X] = V[%X] >> 1 (LSB: %d)\n", X, Y, chip->V[0xF]);
+            // printf("  -> Executed 8XY6: V[%X] = V[%X] >> 1 (LSB: %d)\n", X, Y, chip->V[0xF]);
             break;
         }
         case 0xE:
@@ -217,61 +287,42 @@ void chip8_cycle(Chip8 *chip)
             // 提取 VY 的最高位 (MSB) 存入 VF
             chip->V[0xF] = (chip->V[Y] & 0x80) >> 7;
             chip->V[X] = chip->V[Y] << 1;
-            printf("  -> Executed 8XYE: V[%X] = V[%X] << 1 (MSB: %d)\n", X, Y, chip->V[0xF]);
+            // printf("  -> Executed 8XYE: V[%X] = V[%X] << 1 (MSB: %d)\n", X, Y, chip->V[0xF]);
             break;
         }
 
         default:
-            printf("  -> Unhandled 8XYN opcode: 0x%X\n", chip->opcode);
+            // printf("  -> Unhandled 8XYN opcode: 0x%X\n", chip->opcode);
             break;
         }
-    case 0x1000:
-    { // 1NNN: 无条件跳转 (Jump)
-        // 提取 NNN (低 12 位地址)
-        uint16_t NNN = chip->opcode & 0x0FFF;
-        // 架构师心法：直接覆盖 PC 的值，硬件里的 MUX 会立刻改变取指地址
-        chip->pc = NNN;
-        printf("  -> Executed 1NNN: Jumped to 0x%X\n", NNN);
+
+    case 0x9000:
+    { // 9XY0: 如果 VX != VY，则跳过下一条指令
+        uint8_t X = (chip->opcode & 0x0F00) >> 8;
+        uint8_t Y = (chip->opcode & 0x00F0) >> 4;
+        if (chip->V[X] != chip->V[Y])
+        {
+            chip->pc += 2;
+        }
         break;
     }
 
-    case 0x2000:
-    { // 2NNN: 调用子程序 (Call)
+    case 0xB000:
+    { // BNNN: 跳转到 NNN + V0
         uint16_t NNN = chip->opcode & 0x0FFF;
-        // 1. 将当前的 PC (即下一条指令的地址) 压入栈中
-        // 架构师防坑：必须检查栈是否溢出 (CHIP-8 栈只能存 16 层)
-        if (chip->sp < 16)
-        {
-            chip->stack[chip->sp] = chip->pc;
-            chip->sp++;
-        }
-        else
-        {
-            printf("  -> Error: Stack Overflow!\n");
-        }
-        // 2. 跳转到目标地址
-        chip->pc = NNN;
-        printf("  -> Executed 2NNN: Called subroutine at 0x%X, SP: %d\n", NNN, chip->sp);
+        chip->pc = NNN + chip->V[0];
         break;
     }
 
-    case 0x3000:
-    { // 3XNN: 条件跳转 (如果 VX == NN，则跳过下一条指令)
+    case 0xC000:
+    { // CXNN: 随机数 VX = (random & NN)
         uint8_t X = (chip->opcode & 0x0F00) >> 8;
         uint8_t NN = (chip->opcode & 0x00FF);
-
-        if (chip->V[X] == NN)
-        {
-            // 架构师心法：因为取指阶段 PC 已经 +2 了，这里再 +2 就能实现“跳过”
-            chip->pc += 2;
-            printf("  -> Executed 3XNN: V[%X] == %d, Skipped next instruction\n", X, NN);
-        }
-        else
-        {
-            printf("  -> Executed 3XNN: V[%X] != %d, No skip\n", X, NN);
-        }
+        // 用标准 C 库生成随机数，并和 NN 做与运算
+        chip->V[X] = (rand() % 256) & NN;
         break;
     }
+    
     case 0xD000:
     { // DXYN: 绘制精灵图
         uint8_t X = (chip->opcode & 0x0F00) >> 8;
@@ -314,12 +365,64 @@ void chip8_cycle(Chip8 *chip)
                 }
             }
         }
-        printf("  -> Executed DXYN: Drew sprite at (%d, %d), Collision: %d\n", x_pos, y_pos, chip->V[0xF]);
+        // printf("  -> Executed DXYN: Drew sprite at (%d, %d), Collision: %d\n", x_pos, y_pos, chip->V[0xF]);
         break;
     }
     break;
     }
+        // -------- 内存访问与定时器指令 --------
 
+    case 0xA000:
+    { // ANNN: 将 NNN 设置到索引寄存器 I
+        uint16_t NNN = chip->opcode & 0x0FFF;
+        chip->index = NNN;
+        // printf("  -> Executed ANNN: I = 0x%X\n", NNN);
+        break;
+    }
+
+    case 0xF000:
+    {
+        uint8_t X = (chip->opcode & 0x0F00) >> 8;
+        uint8_t sub_opcode = chip->opcode & 0x00FF;
+
+        switch (sub_opcode)
+        {
+        case 0x07:
+        { // FX07: 读取延迟定时器到 VX
+            chip->V[X] = chip->delay_timer;
+            // printf("  -> Executed FX07: V[%X] = delay_timer (%d)\n", X, chip->delay_timer);
+            break;
+        }
+        case 0x15:
+        { // FX15: 将 VX 的值设置给延迟定时器
+            chip->delay_timer = chip->V[X];
+            // printf("  -> Executed FX15: delay_timer = V[%X] (%d)\n", X, chip->V[X]);
+            break;
+        }
+        case 0x55:
+        { // FX55: 将 V0 到 VX 的数据存入内存 [I, I+X]
+            for (int i = 0; i <= X; i++)
+            {
+                chip->memory[chip->index + i] = chip->V[i];
+            }
+            // printf("  -> Executed FX55: Stored V[0..%X] to memory\n", X);
+            break;
+        }
+        case 0x65:
+        { // FX65: 从内存 [I, I+X] 读取数据到 V0 到 VX
+            for (int i = 0; i <= X; i++)
+            {
+                chip->V[i] = chip->memory[chip->index + i];
+            }
+            // printf("  -> Executed FX65: Loaded V[0..%X] from memory\n", X);
+            break;
+        }
+        default:
+            printf("  -> Unhandled FX opcode: 0x%X\n", chip->opcode);
+            break;
+        }
+        break;
+    }
     default:
         printf("  -> Unknown opcode: 0x%X\n", chip->opcode);
         break;
@@ -328,24 +431,24 @@ void chip8_cycle(Chip8 *chip)
 
 void draw_screen(Chip8 *chip)
 {
-    printf("\n--- Virtual Screen ---\n");
+    // ANSI 转义序列，清空终端并把光标移到左上角
+    printf("\033[H\033[J");
+
     for (int y = 0; y < 32; y++)
     {
-        // 👇 内层循环：遍历 64 个像素列
         for (int x = 0; x < 64; x++)
         {
             if (chip->video[y * 64 + x] == 1)
             {
-                printf("█"); // 像素亮起
+                printf("█");
             }
             else
             {
-                printf(" "); // 像素熄灭（空格）
+                printf(" ");
             }
         }
-        printf("\n"); // 每画完 64 个像素，换到下一行
+        printf("\n");
     }
-    printf("-----------------------\n");
 }
 
 int main()
@@ -353,23 +456,17 @@ int main()
     Chip8 my_chip;
     chip8_init(&my_chip);
 
-       // 设置坐标和索引
-    my_chip.V[1] = 10;
-    my_chip.V[2] = 5;
-    my_chip.index = 75;
-    
-    // 第一条指令
-    my_chip.memory[0x200] = 0xD1;
-    my_chip.memory[0x201] = 0x25;
-    
-    // 第二条指令（复制一遍画图指令）
-    my_chip.memory[0x202] = 0xD1;
-    my_chip.memory[0x203] = 0x25;
-    
-    // 连续执行两次
-    chip8_cycle(&my_chip); // 画 F
-    chip8_cycle(&my_chip); // 再画一次，触发碰撞消除
-    // 打印虚拟屏幕
+    // 加载高考试卷
+    chip8_load_rom(&my_chip, "test_opcode.ch8");
+
+    // 跑 3000 条指令（足够测试程序执行完并画出结果了）
+    printf("Running 3000 cycles for test ROM...\n");
+    for (int i = 0; i < 3000; i++)
+    {
+        chip8_cycle(&my_chip);
+    }
+
+    // 打印最终屏幕
     draw_screen(&my_chip);
 
     return 0;
