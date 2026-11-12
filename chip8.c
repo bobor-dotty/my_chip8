@@ -451,23 +451,27 @@ void draw_screen(Chip8 *chip)
     }
 }
 
-int main()
-{
+
+int main() {
     Chip8 my_chip;
     chip8_init(&my_chip);
+    
+    // 去把刚刚下载的 IBM Logo ROM 的文件名填进去
+  
+    chip8_load_rom(&my_chip, "IBM Logo.ch8");
 
-    // 加载高考试卷
-    chip8_load_rom(&my_chip, "test_opcode.ch8");
+    printf("\033[2J"); // 先清空一次屏幕
 
-    // 跑 3000 条指令（足够测试程序执行完并画出结果了）
-    printf("Running 3000 cycles for test ROM...\n");
-    for (int i = 0; i < 3000; i++)
-    {
+    // 游戏主循环（真实的 CPU 永远在跑）
+    while (1) {
+        // 1. 跑一条指令
         chip8_cycle(&my_chip);
+
+        // 2. 刷新屏幕（把显存里的 0 和 1 变成字符）
+        draw_screen(&my_chip);
+
+        // 3. 休眠 16 毫秒（这相当于给 CPU 降频，防止终端疯狂闪烁）
+        usleep(16000); 
     }
-
-    // 打印最终屏幕
-    draw_screen(&my_chip);
-
     return 0;
 }
