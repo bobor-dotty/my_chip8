@@ -128,30 +128,66 @@ void chip8_cycle(Chip8 *chip) {
             printf("  -> Executed 7XNN: V[%X] += %d\n", X, NN);
             break;
         }
-
+        case 0x8000: {
+            // 提取寄存器编号 X 和 Y
+            uint8_t X = (chip->opcode & 0x0F00) >> 8;
+            uint8_t Y = (chip->opcode & 0x00F0) >> 4;
+            uint8_t N = chip->opcode & 0x000F; // 最低 4 位决定具体操作
+         
+            switch (N) {
+                case 0x4: { // 8XY4: VX = VX + VY, 产生进位时 VF = 1
+                    // 最佳实践：用 16 位无符号整数暂存，防止 8 位溢出丢数据
+                    uint16_t sum = chip->V[X] + chip->V[Y]; 
+                    
+                    // 如果超过 255，说明产生了第 9 位进位
+                    if (sum > 255) {
+                        chip->V[0xF] = 1;
+                    } else {
+                        chip->V[0xF] = 0;
+                    }
+                    
+                    // 只保留低 8 位存回 VX
+                    chip->V[X] = sum & 0xFF; 
+                    printf("  -> Executed 8XY4: V[%X] = V[%X] + V[%X] (Carry: %d)\n", X, X, Y, chip->V[0xF]);
+                    break;
+                    }
+                case 0x5: { // 8XY5: VX = VX - VY, VX > VY 时 VF = 1 (无借位)
+                    // 硬件规则：先判断大小设置标志位，再做减法
+                    if (chip->V[X] >= chip->V[Y]) {
+                        chip->V[0xF] = 1; // 没有借位
+                    } else {
+                        chip->V[0xF] = 0; // 发生借位
+                    }
+                    
+                    chip->V[X] = chip->V[X] - chip->V[Y];
+                    printf("  -> Executed 8XY5: V[%X] = V[%X] - V[%X] (No Borrow: %d)\n", X, X, Y, chip->V[0xF]);
+                    break;
+                }
+                default:
+                    printf("  -> Unhandled 8XYN opcode: 0x%X\n", chip->opcode);
+                    break;
+            }
+            break;
+        }
         default:
             printf("  -> Unknown opcode: 0x%X\n", chip->opcode);
             break;
     }
 }
+
 int main() {
     Chip8 my_chip;
     chip8_init(&my_chip);
+    // 测试 8XY4 加法进位：
+    // 设 V1 = 200, V2 = 100
+    my_chip.V[1] = 200;
+    my_chip.V[2] = 100;
     
-    // 指令 1：6A05 (把 5 赋值给寄存器 VA)
-    my_chip.memory[0x200] = 0x6A; 
-    my_chip.memory[0x201] = 0x05;
+    // 指令 0x8124 (8XY4: V1 = V1 + V2)
+    my_chip.memory[0x200] = 0x81;
+    my_chip.memory[0x201] = 0x24;
     
-    // 指令 2：7A03 (给寄存器 VA 加上 3)
-    my_chip.memory[0x202] = 0x7A;
-    my_chip.memory[0x203] = 0x03;
-
-    // 让虚拟CPU跑两个时钟周期
     chip8_cycle(&my_chip);
-    chip8_cycle(&my_chip);
-    
-    // 打印结果，看看 VA 是不是变成了 8 (5 + 3)
-    printf("Register VA: %d\n", my_chip.V[0xA]);
-
-    return 0;
+    printf("Result V1: %d, VF (Carry): %d\n", my_chip.V[1], my_chip.V[0xF]);
+    // 预期：V1 变成 44，VF 变成 1
 }
