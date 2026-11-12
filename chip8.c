@@ -272,6 +272,51 @@ void chip8_cycle(Chip8 *chip)
         }
         break;
     }
+    case 0xD000:
+    { // DXYN: 绘制精灵图
+        uint8_t X = (chip->opcode & 0x0F00) >> 8;
+        uint8_t Y = (chip->opcode & 0x00F0) >> 4;
+        uint8_t N = chip->opcode & 0x000F;
+
+        // 获取屏幕上的起始坐标，并做 64x32 的边界环绕（取模）
+        uint8_t x_pos = chip->V[X] % 64;
+        uint8_t y_pos = chip->V[Y] % 32;
+
+        // 碰撞标志初始化为 0
+        chip->V[0xF] = 0;
+        // 外层循环：一行一行地画 (共 N 行)
+        for (int row = 0; row < N; row++)
+        {
+            // 从内存读取当前行要画的 8 个像素数据
+            uint8_t sprite_byte = chip->memory[chip->index + row];
+
+            // 内层循环：一个 bit 一个 bit 地画 (每个字节 8 bit)
+            for (int col = 0; col < 8; col++)
+            {
+                // 使用位掩码 0x80 >> col 来检查当前 bit 是否为 1
+                if ((sprite_byte & (0x80 >> col)) != 0)
+                {
+                    // 计算屏幕上的绝对像素坐标 (带环绕逻辑)
+                    int px = (x_pos + col) % 64;
+                    int py = (y_pos + row) % 32;
+
+                    // 计算在一维 video 数组里的索引
+                    int index = py * 64 + px;
+
+                    // 碰撞检测：如果当前位置已经有像素了 (值为 1)
+                    if (chip->video[index] == 1)
+                    {
+                        chip->V[0xF] = 1; // 发生碰撞！
+                    }
+
+                    // XOR 操作：1 变 0，0 变 1
+                    chip->video[index] ^= 1;
+                }
+            }
+        }
+        printf("  -> Executed DXYN: Drew sprite at (%d, %d), Collision: %d\n", x_pos, y_pos, chip->V[0xF]);
+        break;
+    }
     break;
     }
 
@@ -281,50 +326,49 @@ void chip8_cycle(Chip8 *chip)
     }
 }
 
+void draw_screen(Chip8 *chip)
+{
+    printf("\n--- Virtual Screen ---\n");
+    for (int y = 0; y < 32; y++)
+    {
+        // 👇 内层循环：遍历 64 个像素列
+        for (int x = 0; x < 64; x++)
+        {
+            if (chip->video[y * 64 + x] == 1)
+            {
+                printf("█"); // 像素亮起
+            }
+            else
+            {
+                printf(" "); // 像素熄灭（空格）
+            }
+        }
+        printf("\n"); // 每画完 64 个像素，换到下一行
+    }
+    printf("-----------------------\n");
+}
+
 int main()
 {
     Chip8 my_chip;
     chip8_init(&my_chip);
 
-    // --- 构造一段包含控制流的机器码 ---
-    // 0x200: 2NNN (调用子程序，跳到 0x300)
-    my_chip.memory[0x200] = 0x23;
-    my_chip.memory[0x201] = 0x00;
+    // 设置坐标 (V1 = 10, V2 = 5)
+    my_chip.V[1] = 10;
+    my_chip.V[2] = 5;
 
-    // 0x202: 3XNN (如果 V1 == 5, 跳过下一条)
-    my_chip.memory[0x202] = 0x31;
-    my_chip.memory[0x203] = 0x05;
+    // 设置索引寄存器 I，指向内存中的 'F' 字符 (内存第 75 字节处)
+    my_chip.index = 75;
 
-    // 0x204: 6XNN (V1 = 1，理论上会被跳过)
-    my_chip.memory[0x204] = 0x61;
-    my_chip.memory[0x205] = 0x01;
+    // 指令 D125 (DXYN, 表示在 V1, V2 坐标处画 5 行高的精灵图)
+    my_chip.memory[0x200] = 0xD1;
+    my_chip.memory[0x201] = 0x25;
 
-    // 0x206: 6XNN (V1 = 2，理论上会被跳过)
-    my_chip.memory[0x206] = 0x61;
-    my_chip.memory[0x207] = 0x02;
-
-    // 0x300: 1NNN (跳回 0x202)
-    my_chip.memory[0x300] = 0x12;
-    my_chip.memory[0x301] = 0x02;
-
-    // --- 开始执行测试 ---
-    my_chip.V[1] = 5; // 强行设 V1 为 5，为接下来的 3XNN 做准备
-
-    printf("--- Test 1: 2NNN Call ---\n");
+    // 踩油门，让 CPU 执行这条 DXYN 指令！
     chip8_cycle(&my_chip);
-    // 预期：PC 变成 0x300，SP 变成 1，栈顶存着 0x202
 
-    printf("\n--- Test 2: 1NNN Jump ---\n");
-    chip8_cycle(&my_chip);
-    // 预期：PC 变成 0x202
-
-    printf("\n--- Test 3: 3XNN Skip ---\n");
-    chip8_cycle(&my_chip);
-    // 预期：因为 V1 == 5，PC 应该直接加到 0x206 (跳过 0x204)
-
-    printf("\nFinal PC: 0x%X (Expected 0x206)\n", my_chip.pc);
-    printf("Stack SP: %d (Expected 1)\n", my_chip.sp);
-    printf("Top of Stack: 0x%X (Expected 0x202)\n", my_chip.stack[my_chip.sp - 1]);
+    // 打印虚拟屏幕
+    draw_screen(&my_chip);
 
     return 0;
 }
