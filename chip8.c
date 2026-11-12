@@ -353,20 +353,22 @@ int main()
     Chip8 my_chip;
     chip8_init(&my_chip);
 
-    // 设置坐标 (V1 = 10, V2 = 5)
+       // 设置坐标和索引
     my_chip.V[1] = 10;
     my_chip.V[2] = 5;
-
-    // 设置索引寄存器 I，指向内存中的 'F' 字符 (内存第 75 字节处)
     my_chip.index = 75;
-
-    // 指令 D125 (DXYN, 表示在 V1, V2 坐标处画 5 行高的精灵图)
+    
+    // 第一条指令
     my_chip.memory[0x200] = 0xD1;
     my_chip.memory[0x201] = 0x25;
-
-    // 踩油门，让 CPU 执行这条 DXYN 指令！
-    chip8_cycle(&my_chip);
-
+    
+    // 第二条指令（复制一遍画图指令）
+    my_chip.memory[0x202] = 0xD1;
+    my_chip.memory[0x203] = 0x25;
+    
+    // 连续执行两次
+    chip8_cycle(&my_chip); // 画 F
+    chip8_cycle(&my_chip); // 再画一次，触发碰撞消除
     // 打印虚拟屏幕
     draw_screen(&my_chip);
 
