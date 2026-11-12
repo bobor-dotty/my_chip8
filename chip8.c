@@ -98,38 +98,60 @@ void chip8_cycle(Chip8 *chip) {
     chip->pc += 2;
 
     // 开始译码和执行
-    switch (chip->opcode) {
-        case 0x00E0:
-            // 清屏指令：把视频内存全部清零
-            memset(chip->video, 0, sizeof(chip->video));
-            printf("  -> Executed 00E0: Screen cleared!\n");
+       // 开始译码和执行：用 0xF000 掩码只看高 4 位
+    switch (chip->opcode & 0xF000) {
+        case 0x0000:
+            // 处理 0 开头的指令
+            if (chip->opcode == 0x00E0) {
+                memset(chip->video, 0, sizeof(chip->video));
+                printf("  -> Executed 00E0: Screen cleared!\n");
+            }
             break;
-            
-        // 以后其他的指令，都用 case 依次写在这里
-        case 0x1234: // 我们刚才造的那个假指令，给它起个名字
-            printf("  -> Executed 0x1234: Whatever it is, it worked!\n");
+
+        case 0x1000:
+            // 1NNN: 跳转到地址 NNN（你之前的假指令 0x1234 属于这个）
+            printf("  -> Executed 1NNN: Jumped to 0x%X\n", chip->opcode & 0x0FFF);
             break;
+
+        case 0x6000: { // 6XNN: 将 NN 赋值给寄存器 VX
+            uint8_t X = (chip->opcode & 0x0F00) >> 8;
+            uint8_t NN = (chip->opcode & 0x00FF);
+            chip->V[X] = NN;
+            printf("  -> Executed 6XNN: V[%X] = %d\n", X, NN);
+            break;
+        }
+
+        case 0x7000: { // 7XNN: 将 NN 加到寄存器 VX
+            uint8_t X = (chip->opcode & 0x0F00) >> 8;
+            uint8_t NN = (chip->opcode & 0x00FF);
+            chip->V[X] += NN;
+            printf("  -> Executed 7XNN: V[%X] += %d\n", X, NN);
+            break;
+        }
 
         default:
             printf("  -> Unknown opcode: 0x%X\n", chip->opcode);
             break;
     }
 }
-
 int main() {
     Chip8 my_chip;
     chip8_init(&my_chip);
     
-    // 强行往 0x200 开始的内存里塞两条假指令（比如 0x00E0 代表清屏，0x1234 随便写的）
-    my_chip.memory[0x200] = 0x00; 
-    my_chip.memory[0x201] = 0xE0;
+    // 指令 1：6A05 (把 5 赋值给寄存器 VA)
+    my_chip.memory[0x200] = 0x6A; 
+    my_chip.memory[0x201] = 0x05;
     
-    my_chip.memory[0x202] = 0x12;
-    my_chip.memory[0x203] = 0x34;
+    // 指令 2：7A03 (给寄存器 VA 加上 3)
+    my_chip.memory[0x202] = 0x7A;
+    my_chip.memory[0x203] = 0x03;
 
     // 让虚拟CPU跑两个时钟周期
     chip8_cycle(&my_chip);
     chip8_cycle(&my_chip);
+    
+    // 打印结果，看看 VA 是不是变成了 8 (5 + 3)
+    printf("Register VA: %d\n", my_chip.V[0xA]);
 
     return 0;
 }

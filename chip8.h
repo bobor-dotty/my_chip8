@@ -5,7 +5,7 @@ typedef struct {
     uint8_t memory[4096];     
     
     // 2. 通用寄存器：16个 8位寄存器，名字叫 V0 到 VF (对应 CPU 里的 Register File)
-    uint8_t registers[16];            
+    uint8_t V[16];            
     
     // 3. 索引寄存器：16位，通常用来存内存地址 (类似 RISC-V 里的指针)
     uint16_t index;               
