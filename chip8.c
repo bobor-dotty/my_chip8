@@ -37,7 +37,7 @@ void chip8_init(Chip8 *chip) {
     chip->sp = 0;
     
     // 4. 加载字体集（Fontset）到内存的 0x000 到 0x04F 处
-    memcpy(chip->memory,fontset,80);
+    memcpy(chip->memory,fontset,sizeof(fontset));
 }
 
 #define START_ADDRESS 0x200 // 宏定义 ROM 的起始地址
@@ -85,16 +85,51 @@ void chip8_load_rom(Chip8 *chip, const char *filename) {
     printf("Successfully loaded ROM: %s (%ld bytes)\n", filename, size);
 }
 
+void chip8_cycle(Chip8 *chip) {
+    // 1. 取指 (Fetch)
+    // CHIP-8 指令是 16 位的（2个字节）。
+    // 从 PC 指向的内存读高 8 位，左移 8 位；再读低 8 位拼在一起。
+    chip->opcode = (chip->memory[chip->pc] << 8) | chip->memory[chip->pc + 1];
+    
+    // 打印看看取到了什么指令（十六进制）
+    printf("Fetched opcode: 0x%X at PC: 0x%X\n", chip->opcode, chip->pc);
+    
+    // PC 自增 2（因为执行完这条指令，PC 要指向下一条指令）
+    chip->pc += 2;
+
+    // 开始译码和执行
+    switch (chip->opcode) {
+        case 0x00E0:
+            // 清屏指令：把视频内存全部清零
+            memset(chip->video, 0, sizeof(chip->video));
+            printf("  -> Executed 00E0: Screen cleared!\n");
+            break;
+            
+        // 以后其他的指令，都用 case 依次写在这里
+        case 0x1234: // 我们刚才造的那个假指令，给它起个名字
+            printf("  -> Executed 0x1234: Whatever it is, it worked!\n");
+            break;
+
+        default:
+            printf("  -> Unknown opcode: 0x%X\n", chip->opcode);
+            break;
+    }
+}
+
 int main() {
     Chip8 my_chip;
-    
-    // 1. 初始化虚拟硬件
     chip8_init(&my_chip);
-    printf("PC起点: 0x%X\n", my_chip.pc);
-    printf("内存第0个字节(字体集第一位): 0x%X\n", my_chip.memory[0]);
-
-    // 2. 尝试加载一个ROM（如果没有测试文件，这一步可以注释掉）
-    // chip8_load_rom(&my_chip, "test_rom.ch8");
     
+    // 强行往 0x200 开始的内存里塞两条假指令（比如 0x00E0 代表清屏，0x1234 随便写的）
+    my_chip.memory[0x200] = 0x00; 
+    my_chip.memory[0x201] = 0xE0;
+    
+    my_chip.memory[0x202] = 0x12;
+    my_chip.memory[0x203] = 0x34;
+
+    // 让虚拟CPU跑两个时钟周期
+    chip8_cycle(&my_chip);
+    chip8_cycle(&my_chip);
+
     return 0;
 }
