@@ -55,7 +55,7 @@ void chip8_load_rom(Chip8 *chip, const char *filename) {
     long size = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    // 3. 架构师警告：CHIP-8 的 4KB 内存，前 512 字节被系统和字体集占了！
+    // 3. 警告：CHIP-8 的 4KB 内存，前 512 字节被系统和字体集占了
     // 如果 ROM 大于 (4096 - 512) = 3584 字节，就会发生内存溢出！
     if (size > (4096 - START_ADDRESS)) {
         printf("Error: ROM file is too large to fit in memory!\n");
@@ -76,11 +76,25 @@ void chip8_load_rom(Chip8 *chip, const char *filename) {
     fclose(file);
 
     // 6. 核心动作：把缓冲区的数据拷贝到虚拟机内存的 0x200 处
-    // 这就好比把 ROM 里的指令烧录到芯片的闪存里
+    // 好比把 ROM 里的指令烧录到芯片的闪存里
     memcpy(&chip->memory[START_ADDRESS], buffer, size);
 
-    // 7. 极其重要：释放 malloc 申请的内存，防止内存泄漏！(对应 C++ 的 delete[])
+    // 7. 释放 malloc 申请的内存，防止内存泄漏(对应 C++ 的 delete[])
     free(buffer);
     
     printf("Successfully loaded ROM: %s (%ld bytes)\n", filename, size);
+}
+
+int main() {
+    Chip8 my_chip;
+    
+    // 1. 初始化虚拟硬件
+    chip8_init(&my_chip);
+    printf("PC起点: 0x%X\n", my_chip.pc);
+    printf("内存第0个字节(字体集第一位): 0x%X\n", my_chip.memory[0]);
+
+    // 2. 尝试加载一个ROM（如果没有测试文件，这一步可以注释掉）
+    // chip8_load_rom(&my_chip, "test_rom.ch8");
+    
+    return 0;
 }
