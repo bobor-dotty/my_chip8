@@ -163,13 +163,52 @@ void chip8_cycle(Chip8 *chip) {
                     printf("  -> Executed 8XY5: V[%X] = V[%X] - V[%X] (No Borrow: %d)\n", X, X, Y, chip->V[0xF]);
                     break;
                 }
+                case 0x0: { // 8XY0: VX = VY
+                    chip->V[X] = chip->V[Y];
+                    printf("  -> Executed 8XY0: V[%X] = V[%X]\n", X, Y);
+                    break;
+                }
+                case 0x1: { // 8XY1: VX = VX | VY
+                    chip->V[X] |= chip->V[Y];
+                    chip->V[0xF] = 0; 
+                    printf("  -> Executed 8XY1: V[%X] |= V[%X]\n", X, Y);
+                    break;
+                }
+                                case 0x2: { // 8XY2: VX = VX & VY (按位与)
+                    chip->V[X] &= chip->V[Y];
+                    chip->V[0xF] = 0; // 逻辑运算后 VF 必须清零
+                    printf("  -> Executed 8XY2: V[%X] &= V[%X]\n", X, Y);
+                    break;
+                }
+                case 0x3: { // 8XY3: VX = VX ^ VY (按位异或)
+                    chip->V[X] ^= chip->V[Y];
+                    chip->V[0xF] = 0; // 逻辑运算后 VF 必须清零
+                    printf("  -> Executed 8XY3: V[%X] ^= V[%X]\n", X, Y);
+                    break;
+                }
+                case 0x6: { // 8XY6: VX = VY >> 1 (右移一位)
+                    // 提取 VY 的最低位 (LSB) 存入 VF
+                    chip->V[0xF] = chip->V[Y] & 0x1; 
+                    chip->V[X] = chip->V[Y] >> 1;
+                    printf("  -> Executed 8XY6: V[%X] = V[%X] >> 1 (LSB: %d)\n", X, Y, chip->V[0xF]);
+                    break;
+                }
+                case 0xE: { // 8XYE: VX = VY << 1 (左移一位)
+                    // 提取 VY 的最高位 (MSB) 存入 VF
+                    chip->V[0xF] = (chip->V[Y] & 0x80) >> 7;
+                    chip->V[X] = chip->V[Y] << 1;
+                    printf("  -> Executed 8XYE: V[%X] = V[%X] << 1 (MSB: %d)\n", X, Y, chip->V[0xF]);
+                    break;
+                }
+          
                 default:
                     printf("  -> Unhandled 8XYN opcode: 0x%X\n", chip->opcode);
                     break;
             }
             break;
         }
-        default:
+       
+             default:
             printf("  -> Unknown opcode: 0x%X\n", chip->opcode);
             break;
     }
@@ -178,16 +217,25 @@ void chip8_cycle(Chip8 *chip) {
 int main() {
     Chip8 my_chip;
     chip8_init(&my_chip);
-    // 测试 8XY4 加法进位：
-    // 设 V1 = 200, V2 = 100
-    my_chip.V[1] = 200;
-    my_chip.V[2] = 100;
     
-    // 指令 0x8124 (8XY4: V1 = V1 + V2)
+    // 1. 测试 AND 逻辑运算 (8XY2)
+    // 设 V1 = 0x0F (00001111), V2 = 0x33 (00110011)
+    my_chip.V[1] = 0x0F;
+    my_chip.V[2] = 0x33;
+    // 指令 0x8122 (V1 = V1 & V2)
     my_chip.memory[0x200] = 0x81;
-    my_chip.memory[0x201] = 0x24;
-    
+    my_chip.memory[0x201] = 0x22;
     chip8_cycle(&my_chip);
-    printf("Result V1: %d, VF (Carry): %d\n", my_chip.V[1], my_chip.V[0xF]);
-    // 预期：V1 变成 44，VF 变成 1
+    printf(">> Test AND: V1 = 0x%X (Expected: 0x03)\n\n", my_chip.V[1]);
+
+    // 2. 测试右移进位 (8XY6)
+    // 设 V3 = 0x05 (00000101)
+    my_chip.V[3] = 0x05;
+    // 指令 0x8136 (V3 = V3 >> 1)
+    my_chip.memory[0x202] = 0x83;
+    my_chip.memory[0x203] = 0x36;
+    chip8_cycle(&my_chip);
+    printf(">> Test Shift Right: V3 = 0x%X, VF = %d (Expected: V3=0x02, VF=1)\n\n", my_chip.V[3], my_chip.V[0xF]);
+
+    return 0;
 }
